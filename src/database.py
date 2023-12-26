@@ -1,10 +1,14 @@
 # database.py
+import sys
+import os
 import sqlite3
 import hashlib
+from datetime import datetime
 
 DATABASE_FILENAME = '../data/invoices.db'
 
 def get_db_connection():
+
     conn = sqlite3.connect(DATABASE_FILENAME)
     conn.row_factory = sqlite3.Row
     return conn
@@ -28,6 +32,7 @@ def init_db():
             nombre_cliente TEXT NOT NULL,
             dni_cliente TEXT NOT NULL,
             direccion_cliente TEXT NOT NULL,
+            referencia TEXT NUL,
             FOREIGN KEY (id_user) REFERENCES users (id)
         );
                     
@@ -37,6 +42,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS presupuesto (
             id_user INTEGER,
             id_presupuesto INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo_presupuesto bit,
             fecha DATE,
             nombre_cliente TEXT NOT NULL,
             dni_cliente TEXT NOT NULL,
@@ -52,6 +58,7 @@ def init_db():
             descripcion TEXT,
             cantidad INTEGER,
             precio DECIMAL,
+            tecnico INTEGER,
             FOREIGN KEY (id_factura) REFERENCES Factura (id_factura)
         );
     """)
@@ -63,6 +70,7 @@ def init_db():
             descripcion TEXT,
             cantidad INTEGER,
             precio DECIMAL,
+            tecnico INTEGER,
             FOREIGN KEY (id_presupuesto) REFERENCES presupuesto (id_presupuesto)
         );
     """)
@@ -72,14 +80,17 @@ def init_db():
         SELECT
             f.id_factura,
             f.fecha,
+            f.tipo_factura,
             f.nombre_cliente,
             f.dni_cliente,
             f.direccion_cliente,
+            f.referencia,
             c.id_concepto,
             c.descripcion,
             c.cantidad,
             c.precio,
-            c.precio - (c.precio * 0.21) AS precio_sin_iva
+            c.tecnico,
+            c.precio / (1 + (21 / 100.0)) AS precio_sin_iva
         FROM Factura f
         JOIN Concepto c ON f.id_factura = c.id_factura;
     """)
@@ -90,13 +101,16 @@ def init_db():
         SELECT
             p.id_presupuesto,
             p.fecha,
+            p.tipo_presupuesto,
             p.nombre_cliente,
             p.dni_cliente,
             p.direccion_cliente,
             c.id_concepto_p,
             c.descripcion,
             c.cantidad,
-            c.precio
+            c.precio,
+            c.tecnico,
+            c.precio / (1 + (21 / 100.0)) AS precio_sin_iva
         FROM presupuesto p
         JOIN Concepto_presupuesto c ON p.id_presupuesto = c.id_presupuesto;
     """)
@@ -140,46 +154,48 @@ def add_user(username, password):
         conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_password))
     conn.close()
 
-def insert_factura(id_user, nombre_cliente, dni_cliente, direccion_cliente,tipo_factura):
+def insert_factura(id_user, nombre_cliente, dni_cliente, direccion_cliente,tipo_factura,referencia):
     conn = get_db_connection()
+    fecha_actual = datetime.now().date()
     with conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO Factura (id_user, fecha, nombre_cliente, dni_cliente, direccion_cliente,tipo_factura)
-            VALUES (?, datetime('now'), ?, ?, ?,?);
-        """, (id_user, nombre_cliente, dni_cliente, direccion_cliente,tipo_factura))
+            INSERT INTO Factura (id_user, fecha, nombre_cliente, dni_cliente, direccion_cliente,tipo_factura,referencia)
+            VALUES (?, ?, ?, ?, ?, ?, ?);
+        """, (id_user,fecha_actual, nombre_cliente, dni_cliente, direccion_cliente,tipo_factura,referencia))
         id_factura = cursor.lastrowid
         conn.commit()
     return id_factura
 
-def insert_presupuesto(id_user, nombre_cliente, dni_cliente, direccion_cliente):
+def insert_presupuesto(id_user, nombre_cliente, dni_cliente, direccion_cliente,tipo_presupuesto):
     conn = get_db_connection()
+    fecha_actual = datetime.now().date()
     with conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO presupuesto (id_user, fecha, nombre_cliente, dni_cliente, direccion_cliente)
-            VALUES (?, datetime('now'), ?, ?, ?);
-        """, (id_user, nombre_cliente, dni_cliente, direccion_cliente))
+            INSERT INTO presupuesto (id_user, fecha, nombre_cliente, dni_cliente, direccion_cliente,tipo_presupuesto)
+            VALUES (?, ?, ?, ?, ?, ?);
+        """, (id_user,fecha_actual, nombre_cliente, dni_cliente, direccion_cliente,tipo_presupuesto))
         id_presupuesto = cursor.lastrowid
         conn.commit()
     return id_presupuesto
 
-def insert_concepto(id_factura, descripcion, cantidad, precio):
+def insert_concepto(id_factura, descripcion, cantidad, precio,tecnico):
     conn = get_db_connection()
     with conn:
         conn.execute("""
-            INSERT INTO Concepto (id_factura, descripcion, cantidad, precio)
-            VALUES (?, ?, ?, ?);
-        """, (id_factura, descripcion, cantidad, precio))
+            INSERT INTO Concepto (id_factura, descripcion, cantidad, precio,tecnico)
+            VALUES (?, ?, ?, ?, ?);
+        """, (id_factura, descripcion, cantidad, precio, tecnico))
         conn.commit()
 
-def insert_concepto_presupuesto(id_presupuesto, descripcion, cantidad, precio):
+def insert_concepto_presupuesto(id_presupuesto, descripcion, cantidad, precio,tecnico):
     conn = get_db_connection()
     with conn:
         conn.execute("""
-            INSERT INTO Concepto_presupuesto (id_presupuesto, descripcion, cantidad, precio)
-            VALUES (?, ?, ?, ?);
-        """, (id_presupuesto, descripcion, cantidad, precio))
+            INSERT INTO Concepto_presupuesto (id_presupuesto, descripcion, cantidad, precio,tecnico)
+            VALUES (?, ?, ?, ?, ?);
+        """, (id_presupuesto, descripcion, cantidad, precio,tecnico))
         conn.commit()
         
 def delete_invoice_from_database(id_factura):

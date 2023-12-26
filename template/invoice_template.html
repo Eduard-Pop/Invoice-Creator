@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice</title>
+    <style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    /*background: #f4f4f4;*/
+}
+
+.invoice-container {
+    max-width: 800px;
+    margin: 20px auto;
+    background: white;
+    padding: 20px;
+    /*box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);*/
+}
+
+header {
+    border-bottom: 4px solid #000;
+    padding-bottom: 20px;
+    margin-bottom: 20px;
+}
+
+header h1 {
+    margin: 0;
+    color: gray;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+table th, table td {
+    text-align: left;
+    padding: 8px;
+    /*border: 1px solid #ddd;*/
+}
+
+.invoice-summary table {
+    margin-top: 20px;
+}
+
+.invoice-summary th {
+    text-align: right;
+}
+
+.invoice-summary td {
+    text-align: right;
+}
+
+.client-info p {
+    margin: 0;
+}
+.logo {
+    vertical-align: top;
+    display: inline-block;
+    width: 236px;
+    height: 162px;
+}
+.address{
+    padding-left: 10px;
+    padding-top:20px;
+    font-size: 18px;
+    display: inline-block;
+}
+p {
+    font-family: Arial, Helvetica, sans-serif;
+}
+.izquierda{
+    text-align: left;
+    border: 4px solid grey;
+}
+.invoice-details{
+    padding-top: 20px;
+    margin-top: 20px;
+    border-top: 4px solid #000;
+    padding-bottom: 20px;
+    margin-bottom: 20px;
+    border-bottom: 4px solid #000;
+}
+</style>
+</head>
+<body>
+    <div class="invoice-container">
+        <header>
+            <table>
+                <td><img src="{{logo}}" class="logo">
+                <address class="address">
+                    <b>NAME</b><br>
+                    NAME<br>
+                    NAME<br>
+                    NAME<br>
+                    NAME<br>
+                    NAME<br>
+                </address></td>
+                <td><h1>FACTURA</h1></td>
+            </table>
+        </header>
+        <section class="client-info">
+            <table>
+                <tr>
+                    <td>CLIENTE: {{invoice_data.factura_details.nombre_cliente}}</td>
+                    <td><div class="izquierda">Nº FACTURA: {{invoice_data.factura_details.id_factura}}</div></td>
+                </tr>
+                <tr>
+                    <td colspan="2" >CIF: {{invoice_data.factura_details.dni_cliente}}</td>
+                </tr>
+                <tr>
+                    <td colspan="2" >DIRECCIÓN: {{invoice_data.factura_details.direccion_cliente}}</td>
+                </tr>
+                <tr>
+                    <td colspan="2" >FECHA: {{invoice_data.factura_details.fecha}}</td>
+                </tr>
+                {% if invoice_data.factura_details.tipo_factura == 1 %}
+                <tr>
+                    <td colspan="2">REFERENCIA: {{invoice_data.factura_details.referencia}}</td>
+                </tr>
+                {% endif %}
+            </table>
+        </section>
+        {% if  invoice_data.factura_details.tipo_factura == 0 %}
+        <!-- Plantilla para tipo_factura 0 -->
+        <section class="invoice-details">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="text-align: left;">Concepto</th>
+                        <th style="text-align: right;">Cantidad</th>
+                        <th style="text-align: right;">Importe UND</th>
+                        <th style="text-align: right;">IMPORTE</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for concepto in invoice_data.conceptos %}
+                    <tr>
+                        <td style="text-align: left;">{{ concepto.descripcion }}</td>
+                        <td style="text-align: right;">{{ concepto.cantidad }}</td>
+                        <td style="text-align: right;">{{ concepto.precio_sin_iva | round(2)}}€</td>
+                        <td style="text-align: right;">{{ concepto.cantidad * concepto.precio_sin_iva | round(2)}}€</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+        <section class="invoice-summary">
+            {% set ns = namespace(total_sin_iva=0) %}
+            {% for concepto in invoice_data.conceptos %}
+                {% set ns.total_sin_iva = ns.total_sin_iva + (concepto.cantidad * concepto.precio_sin_iva) %}
+            {% endfor %}
+                <table>
+                    <tr>
+                        <th>Total sin iva</th>
+                        <td>{{ ns.total_sin_iva | round(2) }}€</td>
+                    </tr>
+                    <tr>
+                        <th>IMPORTE IVA (%21)</th>
+                        <td>{{ (ns.total_sin_iva * 0.21) | round(2) }}€</td>
+                    </tr>
+                    <tr>
+                        <th>Total(%21 IVA)</th>
+                        <td>{{ "%.2f"|format(ns.total_sin_iva * 1.21)}}€</td>
+                    </tr>
+                </table>
+        </section>
+    {% else %}
+        <!-- Plantilla ligeramente diferente para tipo_factura 1 o cualquier otro valor -->
+        <section class="invoice-details">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="text-align: right;">Concepto</th>
+                        <th style="text-align: right;">Jornadas</th>
+                        <th style="text-align: right;">Tecnico</th>
+                        <th style="text-align: right;">IMPORTE UNI</th>
+                        <th style="text-align: right;">IMPORTE</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for concepto in invoice_data.conceptos %}
+                    <tr>
+                        <td style="text-align: right;">{{ concepto.descripcion }}</td>
+                        <td style="text-align: right;">{{ concepto.cantidad }}</td>
+                        <td style="text-align: right;">{{ concepto.tecnico }}</td>
+                        <td style="text-align: right;">{{ concepto.precio }}€</td>
+                        <td style="text-align: right;">{{ concepto.cantidad * concepto.precio * concepto.tecnico }}€</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+        <section class="invoice-summary">
+            {% set ns = namespace(total_sin_iva=0) %}
+            {% for concepto in invoice_data.conceptos %}
+                {% set ns.total_sin_iva = ns.total_sin_iva + (concepto.cantidad * concepto.precio * concepto.tecnico) %}
+            {% endfor %}
+                <table>
+                    <tr>
+                        <th>Total sin iva</th>
+                        <td>{{ ns.total_sin_iva | round(2) }}€</td>
+                    </tr>
+                    <tr>
+                        <th>IMPORTE IVA (%21)</th>
+                        <td>{{ (ns.total_sin_iva * 0.21) | round(2) }}€</td>
+                    </tr>
+                    <tr>
+                        <th>Total(%21 IVA)</th>
+                        <td>{{ "%.2f"|format(ns.total_sin_iva * 1.21) }}€</td>
+                    </tr>
+                </table>
+        </section>
+    {% endif %}
+    </div>
+</body>
+</html>

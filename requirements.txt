@@ -1,0 +1,4 @@
+pdfkit
+jinja2
+sqlite3
+PySimpleGUI

@@ -1,8 +1,14 @@
 import tkinter as tk
+import PySimpleGUI as sg
 from tkinter import messagebox, font, ttk
 from database import get_db_connection, hash_password,insert_concepto,insert_factura,insert_concepto_presupuesto, insert_presupuesto
-
 from tkinter import simpledialog
+import pdfkit
+from jinja2 import Environment, FileSystemLoader
+from urllib.parse import quote
+
+
+
 
 current_user_id = 1
 
@@ -100,18 +106,25 @@ def create_invoice(menu_window):
         descripcion = descripcion_entry.get()
         cantidad = cantidad_entry.get()
         precio = precio_entry.get()
+        tecnico = tecnico_entry.get()
+
+        if invoice_type.get() == 0:
+            tecnico = "1"
         try:
         # Ensure that cantidad and precio can be converted to float for calculation
-            total = float(cantidad) * float(precio)
+            total = float(cantidad) * float(precio) * float(tecnico)
         except ValueError:
         # Handle the error if cantidad or precio is not a valid number
-            messagebox.showerror("Error", "Cantidad y Precio deben ser números válidos.")
+            messagebox.showerror("Error", "Cantidad, Precio y Nº Tecnicos deben ser números válidos.")
             return
-        temp_conceptos.append((descripcion, cantidad, precio,total))
+        temp_conceptos.append((descripcion, cantidad, precio,tecnico, total))
 
         descripcion_entry.delete(0, tk.END)
         cantidad_entry.delete(0, tk.END)
         precio_entry.delete(0, tk.END)
+        if invoice_type.get() == 1:
+            tecnico_entry.delete(0, tk.END)
+
         update_conceptos_treeview()
 
     def update_conceptos_treeview():
@@ -133,18 +146,30 @@ def create_invoice(menu_window):
         nombre_cliente = nombre_cliente_entry.get()
         dni_cliente = dni_cliente_entry.get()
         direccion_cliente = direccion_cliente_entry.get()
+        referencia = referencia_entry.get()
         if invoice_type.get() == -1:
             messagebox.showerror("Error", "Por favor, seleccione el tipo de factura antes de guardar.", parent=invoice_window)
             return
         tipo_factura = invoice_type.get()
-        id_factura = insert_factura(current_user_id, nombre_cliente, dni_cliente, direccion_cliente,tipo_factura)
+        id_factura = insert_factura(current_user_id, nombre_cliente, dni_cliente, direccion_cliente,tipo_factura,referencia)
         for concepto in temp_conceptos:
-            insert_concepto(id_factura, *concepto[:3])
+            insert_concepto(id_factura, *concepto[:4])
         # Aquí deberías insertar la lógica para guardar los datos en tu base de datos o archivo
         temp_conceptos.clear()
         messagebox.showinfo("Éxito", "Factura Generada correctamente", parent=invoice_window)
         invoice_window.destroy()
         menu_window.deiconify()
+    def handle_invoice_type_change():
+        # If 'Factura para Clientes' is selected
+        if invoice_type.get() == 0:
+            tecnico_entry.delete(0, tk.END)  # Clear the entry
+            tecnico_entry.insert(0, "1")  # Set value to 1
+            tecnico_entry.pack_forget()
+            conceptos_treeview.column('Tecnico', width=0, stretch=False)  # Hide the entry widget
+        # If 'Factura para Empresas' is selected
+        elif invoice_type.get() == 1:
+            tecnico_entry.pack(fill='x')
+            conceptos_treeview.column('Tecnico', width=100, stretch=True)
 
     def return_to_menu():
         menu_window.deiconify()
@@ -179,6 +204,11 @@ def create_invoice(menu_window):
     direccion_cliente_entry = ttk.Entry(left_frame)
     direccion_cliente_entry.pack(fill='x', padx=5, pady=2)
 
+    ttk.Label(left_frame, text="Referencia(En caso de que sea para empresa):").pack(fill='x', padx=5, pady=2)
+    referencia_entry = ttk.Entry(left_frame)
+    referencia_entry.pack(fill='x', padx=5, pady=2)
+
+
     ttk.Label(left_frame, text="Concepto:").pack(fill='x', padx=5, pady=2)
     descripcion_entry = ttk.Entry(left_frame)
     descripcion_entry.pack(fill='x', padx=5, pady=2)
@@ -191,12 +221,18 @@ def create_invoice(menu_window):
     precio_entry = ttk.Entry(left_frame)
     precio_entry.pack(fill='x', padx=5, pady=2)
 
+    ttk.Label(left_frame, text="Nº Tecnicos (Si la factura es para empresas):").pack(fill='x', padx=5, pady=2)
+    tecnico_entry_frame = ttk.Frame(left_frame)
+    tecnico_entry_frame.pack(fill='x', padx=5, pady=2)
+    tecnico_entry = ttk.Entry(tecnico_entry_frame)
+
+
     ttk.Label(left_frame, text="Tipo de Factura:").pack(fill='x', padx=5, pady=2)
     invoice_type = tk.IntVar(value=-1)
     # Radio button for Clients
-    ttk.Radiobutton(left_frame, text="Factura para Clientes", variable=invoice_type, value=0).pack(fill='x', padx=5, pady=2)
+    ttk.Radiobutton(left_frame, text="Factura para Clientes", variable=invoice_type, value=0, command=handle_invoice_type_change).pack(fill='x', padx=5, pady=2)
     # Radio button for Companies
-    ttk.Radiobutton(left_frame, text="Factura para Empresas", variable=invoice_type, value=1).pack(fill='x', padx=5, pady=2)
+    ttk.Radiobutton(left_frame, text="Factura para Empresas", variable=invoice_type, value=1, command=handle_invoice_type_change).pack(fill='x', padx=5, pady=2)
 
     ttk.Button(left_frame, text="Agregar Concepto", command=add_concepto).pack(fill='x', padx=5, pady=2)
     ttk.Button(left_frame, text="Guardar Factura", command=save_factura).pack(fill='x', padx=5, pady=2)
@@ -205,7 +241,7 @@ def create_invoice(menu_window):
     ttk.Button(left_frame, text="Volver al Menú", command=return_to_menu).pack(fill='x', padx=5, pady=2)
 
     # Lista de conceptos con Treeview
-    columns = ('Concepto', 'Cantidad', 'Precio','total')
+    columns = ('Concepto', 'Cantidad','Precio', 'Tecnico','total')
     conceptos_treeview = ttk.Treeview(right_frame, columns=columns, show='headings')
     for col in columns:
         conceptos_treeview.heading(col, text=col)
@@ -222,7 +258,7 @@ def show_invoices(menu_window):
     # Crear una ventana para mostrar las facturas y presupuestos
     invoices_window = tk.Toplevel()
     invoices_window.title("Facturas y Presupuestos")
-    invoices_window.geometry("1200x750")
+    invoices_window.geometry("1400x800")
 
     # Crear pestañas para Facturas y Presupuestos
     tab_control = ttk.Notebook(invoices_window)
@@ -391,6 +427,19 @@ def show_invoices(menu_window):
         'Descripcion': 'descripcion',
         'Cantidad': 'cantidad',
         'Precio': 'precio',
+        'Referencia': 'referencia',
+        'Tecnico': 'tecnico',
+        # Add more mappings as necessary
+    }
+    column_mapping_presupuesto = {
+        'Fecha': 'fecha',
+        'Nombre cliente': 'nombre_cliente',
+        'DNI cliente': 'dni_cliente',
+        'Direccion cliente': 'direccion_cliente',
+        'Descripcion': 'descripcion',
+        'Cantidad': 'cantidad',
+        'Precio': 'precio',
+        'Tecnico': 'tecnico',
         # Add more mappings as necessary
     }
 
@@ -404,6 +453,17 @@ def show_invoices(menu_window):
         # Check if the column is editable ('ID Factura' and 'ID Concepto' are not editable)
         if treeview_facturas.heading(column_id, 'text') not in ['ID Factura', 'ID Concepto']:
             edit_item(item_id, column)
+
+    def on_double_click_presupuesto(event):
+        # Get the column id and item id at the event x and y coordinates
+        column_id = treeview_presupuestos.identify_column(event.x)
+        item_id = treeview_presupuestos.identify_row(event.y)
+        if item_id:  # Check if a valid item is selected
+            column = column_id.replace('#', '')  # Convert '#1' to '1'
+
+        # Check if the column is editable ('ID Factura' and 'ID Concepto' are not editable)
+        if treeview_presupuestos.heading(column_id, 'text') not in ['ID Presupuesto', 'ID Concepto']:
+            edit_item_presupuesto(item_id, column)
 
     def edit_item(item_id, column):
         # Get the bounding box of the cell
@@ -428,12 +488,12 @@ def show_invoices(menu_window):
             if db_field_name:
                 # Determine which table and field to update based on the column
                 
-                if db_field_name in ['fecha', 'nombre_cliente', 'dni_cliente', 'direccion_cliente']:
+                if db_field_name in ['fecha','tipo_factura', 'nombre_cliente', 'dni_cliente', 'direccion_cliente','referencia']:
                     table = 'factura'
                     key = record[0]  # Assuming 'ID Factura' is the first field in the Treeview
                 else:
                     table = 'concepto'
-                    key = record[5]  # Assuming 'ID Concepto' is the sixth field in the Treeview
+                    key = record[7]  # Assuming 'ID Concepto' is the sixth field in the Treeview
                 # Update the database
                 column_num = int(column) - 1  # Adjust for 1-indexing in Treeview
                 new_record = list(record)
@@ -445,6 +505,51 @@ def show_invoices(menu_window):
 
         # Bind the Return key to save the edited value
         entry.bind('<Return>', save_edit)
+        # Set focus on the entry widget
+        entry.focus()
+        # Bind the Escape key to destroy the entry widget
+        entry.bind('<Escape>', lambda e: entry.destroy())
+
+    def edit_item_presupuesto(item_id, column):
+        # Get the bounding box of the cell
+        column_num = int(column) - 1
+        x, y, width, height = treeview_presupuestos.bbox(item_id, column_num)
+
+        # Create an entry widget
+        entry = tk.Entry(treeview_presupuestos)
+        entry.place(x=x, y=y, width=width, height=height, anchor='nw')
+
+        def save_edit_presupuesto(event):
+            # Get the new value from the entry widget
+            new_value = entry.get()
+            # Get the record from the Treeview
+            record = treeview_presupuestos.item(item_id, 'values')
+            # Get the Treeview heading name
+            column_name = treeview_presupuestos.heading('#' + column, 'text')
+
+            # Map the Treeview heading name to the database field name
+            db_field_name = column_mapping_presupuesto.get(column_name)
+
+            if db_field_name:
+                # Determine which table and field to update based on the column
+                
+                if db_field_name in ['fecha','tipo_presupuesto', 'nombre_cliente', 'dni_cliente', 'direccion_cliente','referencia']:
+                    table = 'presupuesto'
+                    key = record[0]  # Assuming 'ID factura' is the first field in the Treeview
+                else:
+                    table = 'Concepto_presupuesto'
+                    key = record[6]  # Assuming 'ID Concepto' is the sixth field in the Treeview
+                # Update the database
+                column_num = int(column) - 1  # Adjust for 1-indexing in Treeview
+                new_record = list(record)
+                new_record[column_num] = new_value
+                treeview_presupuestos.item(item_id, values=new_record)
+                update_database_presupuesto(table, db_field_name, new_value, key)
+            # Destroy the entry widget
+            entry.destroy()
+
+        # Bind the Return key to save the edited value
+        entry.bind('<Return>', save_edit_presupuesto)
         # Set focus on the entry widget
         entry.focus()
         # Bind the Escape key to destroy the entry widget
@@ -468,16 +573,58 @@ def show_invoices(menu_window):
             # Close the connection whether or not an error occurred
             if conn:
                 conn.close()
+    def update_database_presupuesto(table, field, new_value, key):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # Determine the correct key field name for the table
+            key_field = 'id_presupuesto' if table == 'presupuesto' else 'id_concepto_p'
+            sql = f"UPDATE {table} SET {field} = ? WHERE {key_field} = ?"
+            cursor.execute(sql, (new_value, key))
+
+            # Commit the changes
+            conn.commit()
+        except Exception as e:
+            print(f"An error occurred: {e}")
+        finally:
+            # Close the connection whether or not an error occurred
+            if conn:
+                conn.close()
 
     def delete_invoice():
     # Prompt the user to enter the ID of the invoice to be deleted
-        id_factura = simpledialog.askstring("Delete Invoice", "Enter the ID of the invoice to delete:")
+        id_factura = simpledialog.askstring("Borrar factura", "Selecciona el id de la factura que quieres borrar:")
 
-        if id_factura and ask_yes_no_confirmation(f"Are you sure you want to delete the invoice with ID {id_factura}?"):
+        if id_factura and ask_yes_no_confirmation(f"Estas seguro de que quieres borrar la factura {id_factura}?"):
         # Proceed with deletion if ID is provided
             delete_invoice_from_database(id_factura)
             update_treeview(treeview_ids_facturas, data_facturas, id_only=True)
             update_treeview_grouped_by_factura(treeview_facturas, data_facturas)
+
+    def delete_concepto():
+        id_concepto = simpledialog.askstring("Borrar concepto", "Selecciona el id del concepto que quieres borrar:")
+        if id_concepto and ask_yes_no_confirmation(f"Estas seguro de que quieres borrar el concepto {id_concepto}?"):
+            delete_concepto_from_database(id_concepto)
+            #update_treeview(treeview_ids_facturas, data_facturas, id_only=True)
+            #update_treeview_grouped_by_factura(treeview_facturas, data_facturas)
+
+    def delete_concepto_presupuesto():
+        id_concepto = simpledialog.askstring("Borrar concepto", "Selecciona el id del concepto que quieres borrar:")
+        if id_concepto and ask_yes_no_confirmation(f"Estas seguro de que quieres borrar el concepto {id_concepto}?"):
+            delete_concepto_from_database_presupuesto(id_concepto)
+            #update_treeview(treeview_ids_presupuestos, data_presupuestos, id_only=True)
+            #update_treeview_grouped_by_presupuesto(treeview_presupuestos, data_presupuestos)
+
+    def delete_invoice_presupuesto():
+    # Prompt the user to enter the ID of the invoice to be deleted
+        id_presupuesto = simpledialog.askstring("Borrar presupuesto", "Selecciona el id del presupuesto que quieres borrar:")
+
+        if id_presupuesto and ask_yes_no_confirmation(f"Estas seguro de que quieres borrar el presupuesto {id_presupuesto}?"):
+        # Proceed with deletion if ID is provided
+            delete_invoice_from_database_presupuesto(id_presupuesto)
+            update_treeview(treeview_ids_presupuestos, data_presupuestos, id_only=True)
+            update_treeview_grouped_by_presupuesto(treeview_presupuestos, data_presupuestos)
 
         # Refresh your Treeview or update your GUI as needed
     def delete_invoice_from_database(id_factura):
@@ -498,11 +645,201 @@ def show_invoices(menu_window):
         finally:
             if conn:
                 conn.close()
+    def delete_concepto_from_database(id_concepto):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # First, delete the associated 'conceptos'
+            cursor.execute("DELETE FROM concepto WHERE id_concepto = ?", (id_concepto,))
+            # Commit the changes
+            conn.commit()
+        except Exception as e:
+            print(f"An error occurred: {e}")
+        finally:
+            if conn:
+                conn.close()
+    def delete_concepto_from_database_presupuesto(id_concepto):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # First, delete the associated 'conceptos'
+            cursor.execute("DELETE FROM concepto_presupuesto WHERE id_concepto_p = ?", (id_concepto,))
+            # Commit the changes
+            conn.commit()
+        except Exception as e:
+            print(f"An error occurred: {e}")
+        finally:
+            if conn:
+                conn.close()    
     def ask_yes_no_confirmation(message):
         return messagebox.askyesno("Confirmation", message)
+    def get_selected_invoice_id():
+    # Getting the currently focused item in the treeview
+        focused_item = treeview_ids_facturas.focus()
+        # If there's a focused item, retrieve its values
+        if focused_item:
+            item = treeview_ids_facturas.item(focused_item)
+            # Assuming the ID is the first value in the 'values' tuple
+            selected_invoice_id = item['values'][0] 
+            return selected_invoice_id
+        else:
+            # Handle the case when no item is selected, maybe return None or raise an error
+            return None
+        
+    def delete_invoice_from_database_presupuesto(id_presupuesto):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            # First, delete the associated 'conceptos'
+            cursor.execute("DELETE FROM concepto_presupuesto WHERE id_presupuesto = ?", (id_presupuesto,))
+
+            # Then, delete the invoice
+            cursor.execute("DELETE FROM presupuesto WHERE id_presupuesto = ?", (id_presupuesto,))
+
+            # Commit the changes
+            conn.commit()
+        except Exception as e:
+            print(f"An error occurred: {e}")
+        finally:
+            if conn:
+                conn.close()
+    def ask_yes_no_confirmation(message):
+        return messagebox.askyesno("Confirmation", message)
+    def get_selected_invoice_id_presupuesto():
+    # Getting the currently focused item in the treeview
+        focused_item = treeview_ids_presupuestos.focus()
+        # If there's a focused item, retrieve its values
+        if focused_item:
+            item = treeview_ids_presupuestos.item(focused_item)
+            # Assuming the ID is the first value in the 'values' tuple
+            selected_invoice_id = item['values'][0] 
+            return selected_invoice_id
+        else:
+            # Handle the case when no item is selected, maybe return None or raise an error
+            return None
+    def get_tipo_factura(id_factura):
+        conn = get_db_connection()
+        tipo_factura = None
+        with conn:
+            tipo_factura = conn.execute("SELECT tipo_factura FROM factura WHERE id_factura = ?", (id_factura,)).fetchone()
+        return tipo_factura[0] if tipo_factura else None
+    
+    def get_tipo_presupuesto(id_presupuesto):
+        conn = get_db_connection()
+        tipo_presupuesto = None
+        with conn:
+            tipo_presupuesto = conn.execute("SELECT tipo_presupuesto FROM presupuesto WHERE id_presupuesto = ?", (id_presupuesto,)).fetchone()
+        return tipo_presupuesto[0] if tipo_presupuesto else None
+
+    def add_concepto():
+        id_factura = sg.popup_get_text("En que factura quieres insertar un concepto ?", "Insertar factura")
+        if id_factura:
+            tipo_factura = get_tipo_factura(id_factura)
+            fields = ['Concepto', 'Cantidad', 'Precio']
+            if tipo_factura == 1:
+                fields.append('Tecnicos')
+            values = sg.Window('Insertar datos', [[sg.Text(f'{field}:'), sg.Input(key=field)] for field in fields] + [[sg.Button('Aceptar')]]).read(close=True)[1]
+            if values:
+                tecnico = values.get('Tecnicos', 1)
+                insert_concepto(id_factura, values['Concepto'], values['Cantidad'], values['Precio'], tecnico)
+
+    def add_concepto_presupuesto():
+        id_presupuesto = sg.popup_get_text("En que presupuesto quieres insertar un concepto ?", "Insertar presupuesto")
+        if id_presupuesto:
+            tipo_presupuesto = get_tipo_presupuesto(id_presupuesto)
+            fields = ['Concepto', 'Cantidad', 'Precio']
+            if tipo_presupuesto == 1:
+                fields.append('Tecnicos')
+            values = sg.Window('Insertar datos', [[sg.Text(f'{field}:'), sg.Input(key=field)] for field in fields] + [[sg.Button('Aceptar')]]).read(close=True)[1]
+            if values:
+                tecnico = values.get('Tecnicos', 1)
+                insert_concepto_presupuesto(id_presupuesto, values['Concepto'], values['Cantidad'], values['Precio'], tecnico)      
+            
+    def generate_pdf():
+        selected_invoice_id = get_selected_invoice_id()
+        if selected_invoice_id is None:
+            print("No invoice selected.")
+            return
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM ResumenFactura WHERE id_factura = ?", (selected_invoice_id,))
+        factura_details = cursor.fetchone()
+        cursor.execute("SELECT * FROM ResumenFactura WHERE id_factura = ?", (selected_invoice_id,))
+        conceptos = cursor.fetchall()  # Use fetchone() if you expect a single row
+        conn.close()
+
+        if not factura_details:
+            print(f"No data found for invoice ID {selected_invoice_id}")
+            return
+        
+        invoice_context = {
+            'factura_details': factura_details,
+            'conceptos': conceptos,
+                # Add the rest of the fields...
+        }
+        # Load the Jinja template
+        env = Environment(loader=FileSystemLoader('../template'))
+        template = env.get_template('invoice_template.html')
+        ruta_original = 'C:/Users/Edi/Desktop/Proyectos/Aplicaccion python/proyecto_final/template/logo.png'
+        ruta_formateada = quote(ruta_original)
+        logo_path = f'file:///{ruta_formateada}'
+    
+
+        # Render the template with the invoice data
+        html = template.render(invoice_data=invoice_context, logo=logo_path)
+        print(html)
+        config = pdfkit.configuration(wkhtmltopdf=r'C:\wkhtmltopdf\wkhtmltopdf.exe')
+        options = {'enable-local-file-access': ''}
+
+        output_filename = f'factura_{selected_invoice_id}.pdf'
+        pdfkit.from_string(html, output_filename, options=options, configuration=config)
+
+    def generate_pdf_presupuesto():
+        selected_presupuesto_id = get_selected_invoice_id_presupuesto()
+        if selected_presupuesto_id is None:
+            print("No invoice selected.")
+            return
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM resumenpresupuesto WHERE id_presupuesto = ?", (selected_presupuesto_id,))
+        presupuesto_details = cursor.fetchone()
+        cursor.execute("SELECT * FROM resumenpresupuesto WHERE id_presupuesto = ?", (selected_presupuesto_id,))
+        conceptos = cursor.fetchall()  # Use fetchone() if you expect a single row
+        conn.close()
+
+        if not presupuesto_details:
+            print(f"No data found for invoice ID {selected_presupuesto_id}")
+            return
+        
+        presupuesto_context = {
+            'presupuesto_details': presupuesto_details,
+            'conceptos': conceptos,
+                # Add the rest of the fields...
+        }
+        # Load the Jinja template
+        env = Environment(loader=FileSystemLoader('../template'))
+        template = env.get_template('invoice_template_presupuesto.html')
+        logo_path = 'file:///C:/Users/Edi/Desktop/Proyectos/Aplicaccion python/proyecto_final/template/logo.png'
+    
+
+        # Render the template with the invoice data
+        html = template.render(presupuesto_data=presupuesto_context, logo=logo_path)
+        print(html)
+        config = pdfkit.configuration(wkhtmltopdf=r'C:\wkhtmltopdf\wkhtmltopdf.exe')
+        options = {'enable-local-file-access': ''}
+
+        output_filename = f'presupuesto_{selected_presupuesto_id}.pdf'
+        pdfkit.from_string(html, output_filename, options=options, configuration=config)
+
+
+        # Convert the rendered HTML to a PDF
     
     # Treeview para mostrar solo IDs (Facturas)
-    
     style = ttk.Style()
     style.configure("filter_frame_facturas", background="#E8E8E8", foreground="black", rowheight=25)
     style.map("filter_frame_facturas", background=[('selected', '#3498db')])
@@ -541,46 +878,87 @@ def show_invoices(menu_window):
     filter_button_facturas = ttk.Button(filter_frame_facturas, text="Filtrar", command=filter_facturas, style='TButton', width=button_width)
     filter_button_facturas.pack(pady=(15, 0))
 
+    filter_button_facturas = ttk.Button(filter_frame_facturas, text="Añadir Concepto", command=add_concepto, style='TButton', width=button_width)
+    filter_button_facturas.pack(pady=(15, 0))
+
+    delete_button = ttk.Button(filter_frame_facturas, text='Borrar Concepto', command=delete_concepto, style="TButton", width=button_width)
+    delete_button.pack(pady=(15, 0))
+
     delete_button = ttk.Button(filter_frame_facturas, text='Borrar Factura', command=delete_invoice, style="TButton", width=button_width)
     delete_button.pack(pady=(15, 0))   # Adjust this according to your layout needs
+
+    generate_pdf_button = ttk.Button(filter_frame_facturas, text='Generar PDF', command=generate_pdf, style="TButton", width=button_width)
+    generate_pdf_button.pack(pady=(15, 0)) 
+
     
     return_button = ttk.Button(filter_frame_facturas, text="Volver al Menú", command=return_to_menu, style="TButton", width=button_width)
     return_button.pack(side='left', anchor='w', pady=(80, 10))
-
+    ##########################################################################################################################################
     # Treeview para mostrar solo IDs (Presupuestos)
-    left_frame_presupuestos = tk.Frame(tab_presupuestos)
+    style = ttk.Style()
+    style.configure("filter_frame_presupuestos", background="#E8E8E8", foreground="black", rowheight=25)
+    style.map("ffilter_frame_presupuestos", background=[('selected', '#3498db')])
+    style.configure("TButton", font=('Helvetica', 10), borderwidth='1')
+    style.map("TButton", foreground=[('pressed', 'red'), ('active', 'blue')], background=[('pressed', '!disabled', 'black'), ('active', 'white')])
+    label_font = ('Helvetica', 10, 'bold')
+    button_width = 25
+
+
+    left_frame_presupuestos = ttk.Frame(tab_presupuestos)
     left_frame_presupuestos.pack(side='left', fill='y')
 
     treeview_ids_presupuestos = ttk.Treeview(left_frame_presupuestos, columns=('ID Presupuesto',), show='headings')
     treeview_ids_presupuestos.heading('ID Presupuesto', text='ID Presupuesto')
-    treeview_ids_presupuestos.pack(side='top', fill='y')
+    treeview_ids_presupuestos.column('ID Presupuesto', width=100, stretch=True)
+    treeview_ids_presupuestos.pack(side='top', fill='both',expand=True)
     treeview_ids_presupuestos.bind('<<TreeviewSelect>>', on_id_select_presupuesto)
 
     ############ CAMPOS PARA FILTRAR
-    filter_frame_presupuestos = tk.Frame(left_frame_presupuestos)
-    filter_frame_presupuestos.pack(side='bottom', fill='x', padx=8, pady=8)
+    filter_frame_presupuestos = ttk.Frame(left_frame_presupuestos)
+    filter_frame_presupuestos.pack(side='top', fill='x', padx=8, pady=8)
+
 
     #campo para filitrar por nombre
-    nombre_cliente_label = tk.Label(filter_frame_presupuestos, text="Nombre Cliente")
+    nombre_cliente_label = ttk.Label(filter_frame_presupuestos, text="Nombre Cliente", font=label_font)
     nombre_cliente_label.pack(side='top', fill='x')
-    nombre_cliente_entry_presupuestos = tk.Entry(filter_frame_presupuestos)
+    nombre_cliente_entry_presupuestos = ttk.Entry(filter_frame_presupuestos)
     nombre_cliente_entry_presupuestos.pack(side='top', fill='x')
 
     #campo para filtrar por DNI
-    dni_cliente_label = tk.Label(filter_frame_presupuestos, text="DNI Cliente")
+    dni_cliente_label = ttk.Label(filter_frame_presupuestos, text="DNI Cliente",font=label_font)
     dni_cliente_label.pack(side='top', fill='x')
-    dni_cliente_entry_presupuestos = tk.Entry(filter_frame_presupuestos)
+    dni_cliente_entry_presupuestos = ttk.Entry(filter_frame_presupuestos)
     dni_cliente_entry_presupuestos.pack(side='top', fill='x')
 
+
+
+   
+
     # Boton para filtrar
-    filter_button_presupuestos = tk.Button(filter_frame_presupuestos, text="Filter", command=filter_presupuesto)
-    filter_button_presupuestos.pack()
+    filter_button_presupuestos = ttk.Button(filter_frame_presupuestos, text="Filtrar", command=filter_presupuesto, style='TButton', width=button_width)
+    filter_button_presupuestos.pack(pady=(15, 0))
+
+    filter_button_facturas = ttk.Button(filter_frame_presupuestos, text="Añadir Concepto", command=add_concepto_presupuesto, style='TButton', width=button_width)
+    filter_button_facturas.pack(pady=(15, 0))
+
+    delete_button = ttk.Button(filter_frame_presupuestos, text='Borrar Concepto', command=delete_concepto_presupuesto, style="TButton", width=button_width)
+    delete_button.pack(pady=(15, 0))
+
+    delete_button = ttk.Button(filter_frame_presupuestos, text='Borrar Factura', command=delete_invoice_presupuesto, style="TButton", width=button_width)
+    delete_button.pack(pady=(15, 0))   # Adjust this according to your layout needs
+
+    generate_pdf_button = ttk.Button(filter_frame_presupuestos, text='Generar PDF', command=generate_pdf_presupuesto, style="TButton", width=button_width)
+    generate_pdf_button.pack(pady=(15, 0)) 
+
+    return_button = ttk.Button(filter_frame_presupuestos, text="Volver al Menú", command=return_to_menu, style="TButton", width=button_width)
+    return_button.pack(side='left', anchor='w', pady=(80, 10))
+    
 
 
 
 
     # Configuración del Treeview para Facturas
-    columns_facturas = ('ID Factura', 'Fecha', 'Nombre cliente', 'DNI cliente', 'Direccion cliente', 'ID Concepto', 'Descripcion', 'Cantidad', 'Precio', 'Precio sin iva')
+    columns_facturas = ('ID Factura', 'Fecha','tipo de factura', 'Nombre cliente', 'DNI cliente', 'Direccion cliente','Referencia', 'ID Concepto', 'Descripcion', 'Cantidad', 'Precio','Tecnico')
     treeview_facturas = ttk.Treeview(tab_facturas, columns=columns_facturas, show='headings')
     for col in columns_facturas:
         treeview_facturas.heading(col, text=col)
@@ -597,12 +975,13 @@ def show_invoices(menu_window):
     treeview_facturas.delete(*treeview_facturas.get_children())
 
     # Configuración del Treeview para Presupuestos
-    columns_presupuestos = ('ID Presupuesto', 'Fecha', 'Nombre Cliente', 'DNI cliente', 'Direccion', 'ID concepto', 'Descripcion', 'Cantidad', 'Precio')
+    columns_presupuestos = ('ID Presupuesto', 'Fecha','tipo de presupuesto', 'Nombre cliente', 'DNI cliente', 'Direccion cliente', 'ID Concepto', 'Descripcion', 'Cantidad', 'Precio','Tecnico')
     treeview_presupuestos = ttk.Treeview(tab_presupuestos, columns=columns_presupuestos, show='headings')
     for col in columns_presupuestos:
         treeview_presupuestos.heading(col, text=col)
         treeview_presupuestos.column(col, minwidth=0, width=80, stretch=True)
     treeview_presupuestos.pack(expand=True, fill='both', padx=8, pady=8)
+    treeview_presupuestos.bind('<Double-1>', on_double_click_presupuesto)
 
     # Cargar y mostrar datos de presupuestos
     data_presupuestos = load_data('ResumenPresupuesto')
@@ -622,19 +1001,33 @@ def create_presupuesto(menu_window):
         descripcion = descripcion_entry.get()
         cantidad = cantidad_entry.get()
         precio = precio_entry.get()
+        tecnico = tecnico_entry.get()
 
-        temp_conceptos.append((descripcion, cantidad, precio))
+        if invoice_type.get() == 0:
+            tecnico = "1"
+        try:
+        # Ensure that cantidad and precio can be converted to float for calculation
+            total = float(cantidad) * float(precio) * float(tecnico)
+        except ValueError:
+        # Handle the error if cantidad or precio is not a valid number
+            messagebox.showerror("Error", "Cantidad, Precio y Nº Tecnicos deben ser números válidos.")
+            return
+        temp_conceptos.append((descripcion, cantidad, precio, tecnico, total))
 
         descripcion_entry.delete(0, tk.END)
         cantidad_entry.delete(0, tk.END)
         precio_entry.delete(0, tk.END)
+        if invoice_type.get() == 1:
+            tecnico_entry.delete(0, tk.END)
+
         update_conceptos_treeview()
 
     def update_conceptos_treeview():
         for i in conceptos_treeview.get_children():
             conceptos_treeview.delete(i)
         for concepto in temp_conceptos:
-            conceptos_treeview.insert('', tk.END, values=concepto)
+            formatted_concepto = concepto[:-1] + (f"{concepto[-1]:.2f}",)
+            conceptos_treeview.insert('', tk.END, values=formatted_concepto)
 
     def delete_selected_concepto():
         selected_item = conceptos_treeview.selection()
@@ -648,14 +1041,29 @@ def create_presupuesto(menu_window):
         nombre_cliente = nombre_cliente_entry.get()
         dni_cliente = dni_cliente_entry.get()
         direccion_cliente = direccion_cliente_entry.get()
-        id_presupuesto = insert_presupuesto(current_user_id, nombre_cliente, dni_cliente, direccion_cliente)
+        if invoice_type.get() == -1:
+            messagebox.showerror("Error", "Por favor, seleccione el tipo de factura antes de guardar.", parent=invoice_window)
+            return
+        tipo_presupuesto = invoice_type.get()
+        id_presupuesto = insert_presupuesto(current_user_id, nombre_cliente, dni_cliente, direccion_cliente,tipo_presupuesto)
         for concepto in temp_conceptos:
-            insert_concepto_presupuesto(id_presupuesto, *concepto)
+            insert_concepto_presupuesto(id_presupuesto, *concepto[:4])
         # Aquí deberías insertar la lógica para guardar los datos en tu base de datos o archivo
         temp_conceptos.clear()
         messagebox.showinfo("Éxito", "Presupuesto generado correctamente", parent=invoice_window)
         invoice_window.destroy()
         menu_window.deiconify()
+    def handle_invoice_type_change():
+        # If 'Factura para Clientes' is selected
+        if invoice_type.get() == 0:
+            tecnico_entry.delete(0, tk.END)  # Clear the entry
+            tecnico_entry.insert(0, "1")  # Set value to 1
+            tecnico_entry.pack_forget()
+            conceptos_treeview.column('Tecnico', width=0, stretch=False)  # Hide the entry widget
+        # If 'Factura para Empresas' is selected
+        elif invoice_type.get() == 1:
+            tecnico_entry.pack(fill='x')
+            conceptos_treeview.column('Tecnico', width=100, stretch=True)
 
     def return_to_menu():
         menu_window.deiconify()
@@ -702,6 +1110,18 @@ def create_presupuesto(menu_window):
     precio_entry = ttk.Entry(left_frame)
     precio_entry.pack(fill='x', padx=5, pady=2)
 
+    ttk.Label(left_frame, text="Nº Tecnicos (Si el presupuesto es para empresas):").pack(fill='x', padx=5, pady=2)
+    tecnico_entry_frame = ttk.Frame(left_frame)
+    tecnico_entry_frame.pack(fill='x', padx=5, pady=2)
+    tecnico_entry = ttk.Entry(tecnico_entry_frame)
+
+    ttk.Label(left_frame, text="Tipo de Presupuesto:").pack(fill='x', padx=5, pady=2)
+    invoice_type = tk.IntVar(value=-1)
+    # Radio button for Clients
+    ttk.Radiobutton(left_frame, text="Presupuesto para Clientes", variable=invoice_type, value=0, command=handle_invoice_type_change).pack(fill='x', padx=5, pady=2)
+    # Radio button for Companies
+    ttk.Radiobutton(left_frame, text="Presupuesto para Empresas", variable=invoice_type, value=1, command=handle_invoice_type_change).pack(fill='x', padx=5, pady=2)
+
     ttk.Button(left_frame, text="Agregar Concepto", command=add_concepto).pack(fill='x', padx=5, pady=2)
     ttk.Button(left_frame, text="Guardar presupuesto", command=save_presupuesto).pack(fill='x', padx=5, pady=2)
 
@@ -709,10 +1129,11 @@ def create_presupuesto(menu_window):
     ttk.Button(left_frame, text="Volver al Menú", command=return_to_menu).pack(fill='x', padx=5, pady=2)
 
     # Lista de conceptos con Treeview
-    columns = ('Concepto', 'Cantidad', 'Precio')
+    columns = ('Concepto', 'Cantidad', 'Precio','Tecnico','Total')
     conceptos_treeview = ttk.Treeview(right_frame, columns=columns, show='headings')
     for col in columns:
         conceptos_treeview.heading(col, text=col)
+        conceptos_treeview.column(col, width=100)
     conceptos_treeview.pack(expand=True, fill='both', padx=8, pady=8)
 
     ttk.Button(right_frame, text="Eliminar concepto", command=delete_selected_concepto).pack(pady=5)
