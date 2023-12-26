@@ -34,7 +34,7 @@ def on_enter_key(event):
     attempt_login()
 # Configuración de la ventana de inicio de sesión
 root = tk.Tk()
-root.title("Python: Simple Login Application")
+root.title("Invoice creator")
 root.geometry("1200x750")  # Tamaño fijo de la ventana
 root.bind('<Return>', on_enter_key)
 
