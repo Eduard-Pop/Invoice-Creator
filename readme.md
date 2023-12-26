@@ -28,10 +28,10 @@ pip install PySimpleGUI pdfkit jinja2
 Ensure a compatible database setup as expected by the `database` module.
 
 ### Running the Application
-Execute the script `gui.py`:
+Execute the script `main.py`:
 
 ```bash
-python gui.py
+python main.py
 ```
 
 ## Usage
